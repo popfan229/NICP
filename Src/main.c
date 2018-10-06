@@ -67,7 +67,9 @@
 I2C_HandleTypeDef I2cHandle;
 uint32_t gnAdpdTimeCurVal = 0;
 uint8_t gnAdpdDataReady = 0;
-
+/* UART handler declaration */
+UART_HandleTypeDef UartHandle;
+__IO ITStatus UartReady = SET;
 
 /* Buffer used for transmission */
 uint8_t Programorder[] = {0x10, 0x00,0x01, 0x18, 0x01, 0x23};  
@@ -84,7 +86,7 @@ uint32_t dcfg_org_105[] = {
 	0x00113131,
 	0x00120050,			    // sampling rate = 100Hz		
 	0x00140119,				// all PDx connect to slot A&B, LEDx1 enable at slot A, LEDx2 enable at slot B
-	0x00150330,				// 8 pulse in slot A&B and the value is /8
+	0x00150550,				// 32 pulse in slot A&B and the value is /32
 	0x00181F80,				// SLOTA_CH1_OFFSET need to clear what does this mean!!!
 	0x00191F80,				// SLOTA_CH2_OFFSET
 	0x001A1F80,				// SLOTA_CH3_OFFSET
@@ -98,9 +100,9 @@ uint32_t dcfg_org_105[] = {
 	0x00243030,				// LEDX2 config 100%
 	0x00250659,
 	0x00300419,				// slotA:0x00300819,pulse width=20us offset = 20us
-	0x00310818,				// pulse period=40us
+	0x00312018,				// pulse period=40us
 	0x00350419,				// slotB				
-	0x00360818,				// slotB
+	0x00362018,				// slotB
 	0x003919F4,				// SLOTA_AFE: 0x003921F4,???
 	0x003B19F4,				// SLOTB_AFE: 0x003921F4,???
 	0X003C3006,
@@ -113,11 +115,18 @@ uint32_t dcfg_org_105[] = {
 /* Buffer used for reception */
 uint8_t aRxBuffer[RXBUFFERSIZE];
 uint16_t RxBuffer[2];
-
+uint16_t nAdpdDataSetSize = 16;	// 16 means for 2slot*4Channles*2Bytes(16bits)=16
+uint16_t nAdpdFifoLevelSize = 0;
+uint16_t nRetValue = 0;
+uint16_t dataIndex=0;
+uint8_t fifoData[16] = {0};
+uint8_t sendData[200] = {0};
+uint8_t sendflag = 0;
+uint16_t sendLen = 0;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void Error_Handler(void);
-
+void copyData(uint8_t* pBuffer1, uint8_t* pBuffer2, uint16_t BufferLength);
 /* Private functions ---------------------------------------------------------*/
 
 /**
@@ -167,6 +176,29 @@ int main(void)
   /* Delay to avoid that possible signal rebound is taken as button release */
   HAL_Delay(50);
   
+  /*##-2- Configure the UART peripheral ######################################*/
+
+  UartHandle.Instance            = USARTx;
+
+  UartHandle.Init.BaudRate       = 115200;
+  UartHandle.Init.WordLength     = UART_WORDLENGTH_8B;
+  UartHandle.Init.StopBits       = UART_STOPBITS_1;
+  UartHandle.Init.Parity         = UART_PARITY_NONE;
+  UartHandle.Init.HwFlowCtl      = UART_HWCONTROL_NONE;
+  UartHandle.Init.Mode           = UART_MODE_TX_RX;
+  UartHandle.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+
+  if(HAL_UART_DeInit(&UartHandle) != HAL_OK)
+  {
+    Error_Handler();
+  }  
+  if(HAL_UART_Init(&UartHandle) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /*--------*/
+  
+  
   LoadDefaultConfig(dcfg_org_105, &I2cHandle);
   if (VerifyDefaultConfig(&I2cHandle, dcfg_org_105) != TRUE)
   {
@@ -176,9 +208,7 @@ int main(void)
   /* Write standard value of clock registers */
   AdpdDrvRegWrite(0x4B, 0x269A, &I2cHandle);
   AdpdDrvRegWrite(0x4D, 0x005E, &I2cHandle);
-//  AdpdDrvRegWrite(0x10, 2, &I2cHandle);	// run ADPD105
 
-//  /*##-5- Wait for the end of the transfer ###################################*/  
   AdpdDriverBringUp(ADPDDrv_4CH_16, ADPDDrv_4CH_16, &I2cHandle);
   
   
@@ -186,9 +216,38 @@ int main(void)
   /* Infinite loop */  
   while (1)
   {
-	BSP_LED_Toggle(LED2); 
-    HAL_Delay(200);
-  }
+	//HAL_Delay(5);
+	AdpdDrvGetParameter(ADPD_FIFOLEVEL, &nAdpdFifoLevelSize, &I2cHandle);
+	sendLen = nAdpdFifoLevelSize;
+	/* Read the data from the FIFO and print them */
+	if(nAdpdFifoLevelSize >= 0x10)
+	{
+		BSP_LED_Toggle(LED2);
+		while (nAdpdFifoLevelSize >= nAdpdDataSetSize) {
+			nRetValue = AdpdDrvReadFifoData(&fifoData[0], nAdpdDataSetSize, &I2cHandle);
+			if (nRetValue == TRUE) {
+				dataIndex = sendLen-nAdpdFifoLevelSize;
+				copyData(&sendData[dataIndex],&fifoData[0],nAdpdDataSetSize);
+				nAdpdFifoLevelSize = nAdpdFifoLevelSize - nAdpdDataSetSize;
+			}
+			sendflag = 1;
+		}
+		BSP_LED_Toggle(LED2);
+	}
+	
+	if((sendflag == 1)&&(UartReady == SET))
+	{	
+		UartReady = RESET; 		
+		sendData[sendLen] = 0xAA;
+		sendData[sendLen+1] = 0x55;
+		if(HAL_UART_Transmit_DMA(&UartHandle, (uint8_t*)sendData, sendLen+2)!= HAL_OK)
+			{
+				Error_Handler();
+			}
+		sendflag = 0;
+	}
+	
+	}	
 }
 
 /**
@@ -257,7 +316,7 @@ void SystemClock_Config(void)
 void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 {
   /* Toggle LED2: Transfer in transmission process is correct */
-  BSP_LED_Toggle(LED2);
+//  BSP_LED_Toggle(LED2);
 }
 
 /**
@@ -271,7 +330,7 @@ void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 void HAL_I2C_MasterRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 {
   /* Toggle LED2: Transfer in reception process is correct */
-  BSP_LED_Toggle(LED2);
+//  BSP_LED_Toggle(LED2);
 }
 
 
@@ -302,35 +361,12 @@ void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *I2cHandle)
 */
 void AdpdDriverBringUp(uint8_t nSlotA, uint8_t nSlotB, I2C_HandleTypeDef *hi2c)
 {
-	uint32_t LoopCnt;
-	uint16_t nRetValue = 0;
-	uint16_t nAdpdFifoLevelSize = 0, nAdpdDataSetSize;
-	uint8_t value[16] = {0};
-	uint8_t nLoopLim;
 
 	/* Set the slot modes for slot A and slot B */
 	AdpdDrvSetSlot(nSlotA, nSlotB, hi2c);
 
     /* Set the device operation to sample mode. The data can be collected now */
 	AdpdDrvSetOperationMode(ADPDDrv_MODE_SAMPLE, hi2c);	// adpd105 was set to RUN in this function
-    nLoopLim = nAdpdDataSetSize = 16;	// 16 means for 2slot*4Channles*2Bytes(16bits)=16
-
-	while (1) {
-		/* Check if the data is ready */
-		if(gnAdpdDataReady)  {
-			gnAdpdDataReady = 1; // need to check how to set this value
-			/* Read the size of the data available in the FIFO */
-			AdpdDrvGetParameter(ADPD_FIFOLEVEL, &nAdpdFifoLevelSize, hi2c);
-			/* Read the data from the FIFO and print them */
-			while (nAdpdFifoLevelSize >= nAdpdDataSetSize) {
-				nRetValue = AdpdDrvReadFifoData(&value[0], nAdpdDataSetSize, hi2c);
-				if (nRetValue == TRUE) {
-					nAdpdFifoLevelSize = nAdpdFifoLevelSize - nAdpdDataSetSize;
-				}
-			}
-			HAL_Delay(100);		// manual delay for reading
-		}
-	}
 }
 
 /**
@@ -348,6 +384,22 @@ static void Error_Handler(void)
   } 
 }
 
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *UartHandle)
+{
+  /* Set transmission flag: transfer complete */
+  UartReady = SET;
+
+}
+
+void copyData(uint8_t* pBuffer1, uint8_t* pBuffer2, uint16_t BufferLength)
+{
+  while (BufferLength--)
+  {
+    *pBuffer1 = *pBuffer2;
+    pBuffer1++;
+    pBuffer2++;
+  }
+}
 /**
   * @}
   */
