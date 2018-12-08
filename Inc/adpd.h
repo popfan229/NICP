@@ -135,7 +135,7 @@ typedef enum {
 
 // IRQ related
 #define FIFO_CLR                0x8000
-#define FIFO_INT_EN             0xC0FF
+#define FIFO_INT_EN             0x00FF	//C0FF
 #define PROX_ON1_INT_EN         0x01FE
 #define IRQ_CLR_ALL             0x01FF
 #define IRQ_CLR_FIFO            0x8000

@@ -9,18 +9,18 @@
   ******************************************************************************
   * @attention
   *
-  * <h2><center>&copy; COPYRIGHT(c) 2017 STMicroelectronics</center></h2>
+  * <h2><center>&copy; COPYRIGHT(c) 2018 Pan Fan</center></h2>
   *
-  * Redistribution and use in source and binary forms, with or without modification,
-  * are permitted provided that the following conditions are met:
-  *   1. Redistributions of source code must retain the above copyright notice,
-  *      this list of conditions and the following disclaimer.
-  *   2. Redistributions in binary form must reproduce the above copyright notice,
-  *      this list of conditions and the following disclaimer in the documentation
-  *      and/or other materials provided with the distribution.
-  *   3. Neither the name of STMicroelectronics nor the names of its contributors
-  *      may be used to endorse or promote products derived from this software
-  *      without specific prior written permission.
+  * 1, data rate = Fs/Na, if Na=8,Fs = 100Hz, data rate = 100/8 = 12.5Hz
+  * 2, function AdpdDriverBringUp(),need to re-check
+  *   
+  *   
+  *  
+  *  
+  *  
+  *   
+  *   
+  *      
   *
   * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
   * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -59,7 +59,9 @@
 /* I2C TIMING Register define when I2C clock source is SYSCLK */
 /* I2C TIMING is calculated in case of the I2C Clock source is the SYSCLK = 80 MHz */
 /* This example use TIMING to 0x00D00E28 to reach 1 MHz speed (Rise time = 120ns, Fall time = 25ns) */
-#define I2C_TIMING      0x00D00E28
+//#define I2C_TIMING      0x00D00E28	//fast plus mode 1MHz
+#define I2C_TIMING      0x10801441	//fast mode 400KHz
+//#define I2C_TIMING      0x10E0A1E1	//standard mode 100KHz
 
 /* Private macro -------------------------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
@@ -81,12 +83,14 @@ uint8_t temp=0;
 #define ADPD_SAMPLE_MODE
 
 uint32_t dcfg_org_105[] = {
-	0x00020005,
-	0x00060F00,
+	0x000100FF,				// enable FIFO interrupt
+	0x00020004,				// always drive GPIO0, and high valid
+	0x00063F00,				// FIFO 112 bytes make an interrput
+	0x000B0101,				// GPIO0 FIFO interrput
 	0x00113131,
-	0x00120050,			    // sampling rate = 100Hz		
-	0x00140119,				// all PDx connect to slot A&B, LEDx1 enable at slot A, LEDx2 enable at slot B
-	0x00150550,				// 32 pulse in slot A&B and the value is /32
+	0x00120028,			    // sampling rate = 200Hz(0x28) 100Hz(0x50)	1000Hz(0x08)
+	0x00140559,				// PD1-4 connect to slot A&B, LEDx1 enable at slot A, LEDx2 enable at slot B
+	0x00150330,				// 8 pulse in slot A&B and the value is /8
 	0x00181F80,				// SLOTA_CH1_OFFSET need to clear what does this mean!!!
 	0x00191F80,				// SLOTA_CH2_OFFSET
 	0x001A1F80,				// SLOTA_CH3_OFFSET
@@ -99,16 +103,16 @@ uint32_t dcfg_org_105[] = {
 	0x00233030,				// LEDX1 config 100%
 	0x00243030,				// LEDX2 config 100%
 	0x00250659,
-	0x00300419,				// slotA:0x00300819,pulse width=20us offset = 20us
-	0x00312018,				// pulse period=40us
-	0x00350419,				// slotB				
-	0x00362018,				// slotB
-	0x003919F4,				// SLOTA_AFE: 0x003921F4,???
-	0x003B19F4,				// SLOTB_AFE: 0x003921F4,???
+	0x00300319,				// slotA:0x00300819,pulse width=20us offset = 20us
+	0x00310818,				// pulse period=40us
+	0x00350319,				// slotB				
+	0x00360818,				// slotB
+	0x003921F4,				// SLOTA_AFE: 0x003921F4,???
+	0x003B21F4,				// SLOTB_AFE: 0x003921F4,???
 	0X003C3006,
 	0x00421C36,				// disable TIA gain ??? gain was set in 0x55
 	0x00441C36,
-	0x004E0060,				// ADC clock = 500kHz
+	0x004E0040,				// ADC clock = 1MHz
 	0xFFFFFFFF,
 };
 
@@ -119,7 +123,9 @@ uint16_t nAdpdDataSetSize = 16;	// 16 means for 2slot*4Channles*2Bytes(16bits)=1
 uint16_t nAdpdFifoLevelSize = 0;
 uint16_t nRetValue = 0;
 uint16_t dataIndex=0;
+uint8_t readFIFO=0;
 uint8_t fifoData[16] = {0};
+uint8_t tempFifoData[16] = {0};
 uint8_t sendData[200] = {0};
 uint8_t sendflag = 0;
 uint16_t sendLen = 0;
@@ -127,6 +133,7 @@ uint16_t sendLen = 0;
 void SystemClock_Config(void);
 static void Error_Handler(void);
 void copyData(uint8_t* pBuffer1, uint8_t* pBuffer2, uint16_t BufferLength);
+static void EXTI2_IRQHandler_Config(void);
 /* Private functions ---------------------------------------------------------*/
 
 /**
@@ -153,6 +160,9 @@ int main(void)
 
   /* Configure LED2 and LED3*/
   BSP_LED_Init(LED2);
+	
+  /*## -0- Configure External line 13 (connected to PC.13 pin) in interrupt mode */
+  EXTI2_IRQHandler_Config();
 
   /*##-1- Configure the I2C peripheral ######################################*/
   I2cHandle.Instance              = I2Cx;
@@ -216,15 +226,19 @@ int main(void)
   /* Infinite loop */  
   while (1)
   {
-	//HAL_Delay(5);
-	AdpdDrvGetParameter(ADPD_FIFOLEVEL, &nAdpdFifoLevelSize, &I2cHandle);
-	sendLen = nAdpdFifoLevelSize;
-	/* Read the data from the FIFO and print them */
-	if(nAdpdFifoLevelSize >= 0x10)
+
+	if(readFIFO == 1)
 	{
-		BSP_LED_Toggle(LED2);
+		AdpdDrvGetParameter(ADPD_FIFOLEVEL, &nAdpdFifoLevelSize, &I2cHandle);
+		sendLen = nAdpdFifoLevelSize;
+		HAL_Delay(50);
+		/* Read the data from the FIFO and print them */
+		//if(nAdpdFifoLevelSize >= 0x70)
+		//{
 		while (nAdpdFifoLevelSize >= nAdpdDataSetSize) {
+			HAL_Delay(20);
 			nRetValue = AdpdDrvReadFifoData(&fifoData[0], nAdpdDataSetSize, &I2cHandle);
+			HAL_Delay(20);
 			if (nRetValue == TRUE) {
 				dataIndex = sendLen-nAdpdFifoLevelSize;
 				copyData(&sendData[dataIndex],&fifoData[0],nAdpdDataSetSize);
@@ -232,7 +246,8 @@ int main(void)
 			}
 			sendflag = 1;
 		}
-		BSP_LED_Toggle(LED2);
+		readFIFO = 0;
+		//}
 	}
 	
 	if((sendflag == 1)&&(UartReady == SET))
@@ -303,6 +318,44 @@ void SystemClock_Config(void)
   {
     /* Initialization Error */
     while(1);
+  }
+}
+
+/**
+  * @brief  Configures EXTI lines 10 to 15 (connected to PC.13 pin) in interrupt mode
+  * @param  None
+  * @retval None
+  */
+static void EXTI2_IRQHandler_Config(void)
+{
+  GPIO_InitTypeDef   GPIO_InitStructure;
+
+  /* Enable GPIOC clock */
+  __HAL_RCC_GPIOC_CLK_ENABLE();
+
+  /* Configure PC.13 pin as input floating */
+  GPIO_InitStructure.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStructure.Pull = GPIO_NOPULL;
+  GPIO_InitStructure.Pin = GPIO_PIN_2;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStructure);
+
+  /* Enable and set EXTI lines 2 Interrupt to the lowest priority */
+  HAL_NVIC_SetPriority(EXTI2_IRQn, 1, 0);
+  HAL_NVIC_EnableIRQ(EXTI2_IRQn);
+}
+
+/**
+  * @brief EXTI line detection callbacks
+  * @param GPIO_Pin: Specifies the pins connected EXTI line
+  * @retval None
+  */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  if (GPIO_Pin == GPIO_PIN_2)
+  {
+    /* Toggle LED2 */
+	readFIFO = 1;
+    BSP_LED_Toggle(LED2);
   }
 }
 

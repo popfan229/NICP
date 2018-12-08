@@ -175,7 +175,7 @@ int16_t AdpdDrvRegWrite(uint16_t nAddr, uint16_t nRegValue, I2C_HandleTypeDef *h
 static int16_t AdpdDrvSetInterrupt(uint16_t nIntMask, I2C_HandleTypeDef *hi2c)
 {
 	int16_t nRetCode = ADPDDrv_SUCCESS;
-	if ((nIntMask & 0x3E00) == 0) {
+	if ((nIntMask & 0xFF00) == 0) {		//(nIntMask & 0x3E00) == 0
 		nRetCode  = AdpdDrvRegWrite(REG_INT_MASK, nIntMask, hi2c);
 	}
 	return nRetCode;
@@ -318,10 +318,11 @@ int16_t AdpdDrvSetOperationMode(uint8_t nOpMode, I2C_HandleTypeDef *hi2c)
 	// uint16_t nRegValue1, nRegValue2;  // regValue1, nRegValue2;
 	nRetCode = AdpdDrvRegWrite(REG_FIFO_CLK, FIFO_CLK_EN, hi2c);      // set clock ON
     if (nOpMode == ADPDDrv_MODE_SAMPLE) {
-		nRetCode |= AdpdDrvSetInterrupt(FIFO_INT_EN, hi2c);  // FIFO interrupt mode
-		nRetCode = AdpdDrvRegWrite(REG_I2CS_CTL_MATCH,
-					   (((gnAdpdFifoWaterMark *
-					      gnAdpdDataSetSize) - 1) << 7), hi2c);
+//		nRetCode |= AdpdDrvSetInterrupt(FIFO_INT_EN, hi2c);  // FIFO interrupt mode
+//		nRetCode = AdpdDrvRegWrite(REG_I2CS_CTL_MATCH,
+//					   (((gnAdpdFifoWaterMark *
+//					      gnAdpdDataSetSize) - 1) << 7), hi2c);
+		nRetCode = AdpdDrvRegWrite(REG_I2CS_CTL_MATCH,0x3F00,hi2c);
 		nRetCode |= AdpdDrvRegWrite(REG_OP_MODE, OP_PAUSE_MODE, hi2c);  // set Pause
 		// enable FIFO clock
 		nRetCode |= AdpdDrvRegWrite(REG_FIFO_CLK, FIFO_CLK_EN, hi2c);
