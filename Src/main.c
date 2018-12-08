@@ -78,6 +78,7 @@ uint8_t Programorder[] = {0x10, 0x00,0x01, 0x18, 0x01, 0x23};
 uint8_t Chipconfigure[] = {0x10, 0x00,0x01}; 
 uint8_t readReg[] = {0x12};
 uint8_t temp=0;
+uint16_t counterx=0;
 
 /* Configuration for ADPD105 */
 #define ADPD_SAMPLE_MODE
@@ -85,12 +86,12 @@ uint8_t temp=0;
 uint32_t dcfg_org_105[] = {
 	0x000100FF,				// enable FIFO interrupt
 	0x00020004,				// always drive GPIO0, and high valid
-	0x00063F00,				// FIFO 112 bytes make an interrput
+	0x00061F00,				// FIFO 3F = 128bytes, 1F = 64bytes make an interrput 
 	0x000B0101,				// GPIO0 FIFO interrput
 	0x00113131,
-	0x00120028,			    // sampling rate = 200Hz(0x28) 100Hz(0x50)	1000Hz(0x08)
+	0x0012000A,			    // sampling rate = 400Hz(0x14) 200Hz(0x28) 100Hz(0x50)	800Hz(0x0A)
 	0x00140559,				// PD1-4 connect to slot A&B, LEDx1 enable at slot A, LEDx2 enable at slot B
-	0x00150330,				// 8 pulse in slot A&B and the value is /8
+	0x00150330,				// 0330=8 pulses for average, 0220=4 pulses for average
 	0x00181F80,				// SLOTA_CH1_OFFSET need to clear what does this mean!!!
 	0x00191F80,				// SLOTA_CH2_OFFSET
 	0x001A1F80,				// SLOTA_CH3_OFFSET
@@ -124,7 +125,7 @@ uint16_t nAdpdFifoLevelSize = 0;
 uint16_t nRetValue = 0;
 uint16_t dataIndex=0;
 uint8_t readFIFO=0;
-uint8_t fifoData[16] = {0};
+uint8_t fifoData[200] = {0};
 uint8_t tempFifoData[16] = {0};
 uint8_t sendData[200] = {0};
 uint8_t sendflag = 0;
@@ -190,7 +191,7 @@ int main(void)
 
   UartHandle.Instance            = USARTx;
 
-  UartHandle.Init.BaudRate       = 115200;
+  UartHandle.Init.BaudRate       = 256000;
   UartHandle.Init.WordLength     = UART_WORDLENGTH_8B;
   UartHandle.Init.StopBits       = UART_STOPBITS_1;
   UartHandle.Init.Parity         = UART_PARITY_NONE;
@@ -231,23 +232,17 @@ int main(void)
 	{
 		AdpdDrvGetParameter(ADPD_FIFOLEVEL, &nAdpdFifoLevelSize, &I2cHandle);
 		sendLen = nAdpdFifoLevelSize;
-		HAL_Delay(50);
+			
 		/* Read the data from the FIFO and print them */
-		//if(nAdpdFifoLevelSize >= 0x70)
-		//{
-		while (nAdpdFifoLevelSize >= nAdpdDataSetSize) {
-			HAL_Delay(20);
-			nRetValue = AdpdDrvReadFifoData(&fifoData[0], nAdpdDataSetSize, &I2cHandle);
-			HAL_Delay(20);
+		if (nAdpdFifoLevelSize ==0x40){
+			nRetValue = AdpdDrvReadFifoData(&fifoData[0], nAdpdFifoLevelSize, &I2cHandle);
+
 			if (nRetValue == TRUE) {
-				dataIndex = sendLen-nAdpdFifoLevelSize;
-				copyData(&sendData[dataIndex],&fifoData[0],nAdpdDataSetSize);
-				nAdpdFifoLevelSize = nAdpdFifoLevelSize - nAdpdDataSetSize;
-			}
-			sendflag = 1;
+					copyData(&sendData[0],&fifoData[0],nAdpdFifoLevelSize);
+					sendflag = 1;
+					readFIFO = 0;
+				}
 		}
-		readFIFO = 0;
-		//}
 	}
 	
 	if((sendflag == 1)&&(UartReady == SET))
@@ -358,34 +353,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     BSP_LED_Toggle(LED2);
   }
 }
-
-/**
-  * @brief  Tx Transfer completed callback.
-  * @param  I2cHandle: I2C handle. 
-  * @note   This example shows a simple way to report end of DMA Tx transfer, and 
-  *         you can add your own implementation. 
-  * @retval None
-  */
-void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *I2cHandle)
-{
-  /* Toggle LED2: Transfer in transmission process is correct */
-//  BSP_LED_Toggle(LED2);
-}
-
-/**
-  * @brief  Rx Transfer completed callback.
-  * @param  I2cHandle: I2C handle
-  * @note   This example shows a simple way to report end of DMA Rx transfer, and 
-  *         you can add your own implementation.
-  * @retval None
-  */
-
-void HAL_I2C_MasterRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
-{
-  /* Toggle LED2: Transfer in reception process is correct */
-//  BSP_LED_Toggle(LED2);
-}
-
 
 /**
   * @brief  I2C error callbacks.

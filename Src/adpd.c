@@ -2,6 +2,8 @@
 /* Includes ------------------------------------------------------------------*/
 #include "adpd.h"
 
+#define SEND_TIMEOUT       10	// 10ms
+#define REC_TIMEOUT        10	// 10ms
 // privite variables
 static ADPDDrv_Operation_Slot_t gnSlotMode_A = (ADPDDrv_Operation_Slot_t) 0;
 static ADPDDrv_Operation_Slot_t gnSlotMode_B = (ADPDDrv_Operation_Slot_t) 0;
@@ -20,48 +22,30 @@ int16_t ADPD_I2C_DATA(I2C_HandleTypeDef *hi2c, uint16_t regAddress, uint8_t *pDa
    uint8_t regAdd[1];
    regAdd[0] = (uint8_t)regAddress;
   /*##-3- read register of adpd105 #####################################*/   
-  do
+  /* Timeout is set to 10ms  */
+  while(HAL_I2C_Master_Transmit(hi2c, (uint16_t)ADPD_W, (uint8_t*)regAdd, 1, SEND_TIMEOUT)!= HAL_OK)
   {
-    if(HAL_I2C_Master_Transmit_DMA(hi2c, (uint16_t)ADPD_W, (uint8_t*)regAdd, 1)!= HAL_OK)
-    {
-      /* Error_Handler() function is called when error occurs. */
-      printf("DCFG: IIC error");
-    }
-
-    /*##-3- Wait for the end of the transfer #################################*/  
-    while (HAL_I2C_GetState(hi2c) != HAL_I2C_STATE_READY)
-    {
-    } 
-
-    /* When Acknowledge failure occurs (Slave don't acknowledge it's address)
+    /* Error_Handler() function is called when Timeout error occurs.
+       When Acknowledge failure occurs (Slave don't acknowledge its address)
        Master restarts communication */
+    if (HAL_I2C_GetError(hi2c) != HAL_I2C_ERROR_AF)
+    {
+      return FALSE;
+    }
   }
-  while(HAL_I2C_GetError(hi2c) == HAL_I2C_ERROR_AF);
-  
-  
+   
   /*##-4- Put I2C peripheral in reception process ###########################*/  
-  do
+  /* Timeout is set to 100ms  */
+  while(HAL_I2C_Master_Receive(hi2c, (uint16_t)ADPD_R, (uint8_t *)pData, Size, REC_TIMEOUT) != HAL_OK)
   {
-    if(HAL_I2C_Master_Receive_DMA(hi2c, (uint16_t)ADPD_R, (uint8_t *)pData, Size) != HAL_OK)
-    {
-      /* Error_Handler() function is called when error occurs. */
-      printf("DCFG: IIC error");
-    }
-
-    /*##-5- Wait for the end of the transfer #################################*/  
-    while (HAL_I2C_GetState(hi2c) != HAL_I2C_STATE_READY)
-    {
-    } 
-
-    /* When Acknowledge failure occurs (Slave don't acknowledge it's address)
+    /* Error_Handler() function is called when Timeout error occurs.
+       When Acknowledge failure occurs (Slave don't acknowledge it's address)
        Master restarts communication */
+    if (HAL_I2C_GetError(hi2c) != HAL_I2C_ERROR_AF)
+    {
+      return FALSE;
+    }
   }
-  while(HAL_I2C_GetError(hi2c) == HAL_I2C_ERROR_AF);
-
-  /*##-5- Wait for the end of the transfer ###################################*/  
-  while (HAL_I2C_GetState(hi2c) != HAL_I2C_STATE_READY)
-  {
-  } 
   
 	return TRUE;
 
@@ -72,48 +56,31 @@ int16_t ADPD_I2C_TxRx(I2C_HandleTypeDef *hi2c, uint16_t regAddress, uint8_t *pDa
    uint8_t regAdd[1];
    regAdd[0] = (uint8_t)regAddress;
   /*##-3- read register of adpd105 #####################################*/   
-  do
+
+  while(HAL_I2C_Master_Transmit(hi2c, (uint16_t)ADPD_W, (uint8_t*)regAdd, 1, SEND_TIMEOUT)!= HAL_OK)
   {
-    if(HAL_I2C_Master_Transmit_DMA(hi2c, (uint16_t)ADPD_W, (uint8_t*)regAdd, 1)!= HAL_OK)
-    {
-      /* Error_Handler() function is called when error occurs. */
-      printf("DCFG: IIC error");
-    }
-
-    /*##-3- Wait for the end of the transfer #################################*/  
-    while (HAL_I2C_GetState(hi2c) != HAL_I2C_STATE_READY)
-    {
-    } 
-
-    /* When Acknowledge failure occurs (Slave don't acknowledge it's address)
+    /* Error_Handler() function is called when Timeout error occurs.
+       When Acknowledge failure occurs (Slave don't acknowledge its address)
        Master restarts communication */
+    if (HAL_I2C_GetError(hi2c) != HAL_I2C_ERROR_AF)
+    {
+      return FALSE;
+    }
   }
-  while(HAL_I2C_GetError(hi2c) == HAL_I2C_ERROR_AF);
   
   
   /*##-4- Put I2C peripheral in reception process ###########################*/  
-  do
+    /* Timeout is set to 100ms  */
+  while(HAL_I2C_Master_Receive(hi2c, (uint16_t)ADPD_R, (uint8_t *)pData, 2, REC_TIMEOUT) != HAL_OK)
   {
-    if(HAL_I2C_Master_Receive_DMA(hi2c, (uint16_t)ADPD_R, (uint8_t *)pData, 2) != HAL_OK)
-    {
-      /* Error_Handler() function is called when error occurs. */
-      printf("DCFG: IIC error");
-    }
-
-    /*##-5- Wait for the end of the transfer #################################*/  
-    while (HAL_I2C_GetState(hi2c) != HAL_I2C_STATE_READY)
-    {
-    } 
-
-    /* When Acknowledge failure occurs (Slave don't acknowledge it's address)
+    /* Error_Handler() function is called when Timeout error occurs.
+       When Acknowledge failure occurs (Slave don't acknowledge it's address)
        Master restarts communication */
+    if (HAL_I2C_GetError(hi2c) != HAL_I2C_ERROR_AF)
+    {
+      return FALSE;
+    }
   }
-  while(HAL_I2C_GetError(hi2c) == HAL_I2C_ERROR_AF);
-
-  /*##-5- Wait for the end of the transfer ###################################*/  
-  while (HAL_I2C_GetState(hi2c) != HAL_I2C_STATE_READY)
-  {
-  } 
   
 	return TRUE;
 
@@ -148,20 +115,17 @@ int16_t AdpdDrvRegWrite(uint16_t nAddr, uint16_t nRegValue, I2C_HandleTypeDef *h
 	anI2cData[0] = (uint8_t)nAddr;
 	anI2cData[1] = (uint8_t)(nRegValue >> 8);
 	anI2cData[2] = (uint8_t)(nRegValue);
-	
-	do	
+		  
+	while(HAL_I2C_Master_Transmit(hi2c, (uint16_t)ADPD_W, (uint8_t*)anI2cData, 3, SEND_TIMEOUT)!= HAL_OK)
 	  {
-		if(HAL_I2C_Master_Transmit_DMA(hi2c, (uint16_t)ADPD_W, (uint8_t*)anI2cData, 3)!= HAL_OK)
+		/* Error_Handler() function is called when Timeout error occurs.
+		   When Acknowledge failure occurs (Slave don't acknowledge its address)
+		   Master restarts communication */
+		if (HAL_I2C_GetError(hi2c) != HAL_I2C_ERROR_AF)
 		{
 		  return FALSE;
 		}
-
-		while (HAL_I2C_GetState(hi2c) != HAL_I2C_STATE_READY)
-		{
-		} 
-
 	  }
-	while(HAL_I2C_GetError(hi2c) == HAL_I2C_ERROR_AF);
 	
 	return TRUE;
 }
@@ -322,7 +286,7 @@ int16_t AdpdDrvSetOperationMode(uint8_t nOpMode, I2C_HandleTypeDef *hi2c)
 //		nRetCode = AdpdDrvRegWrite(REG_I2CS_CTL_MATCH,
 //					   (((gnAdpdFifoWaterMark *
 //					      gnAdpdDataSetSize) - 1) << 7), hi2c);
-		nRetCode = AdpdDrvRegWrite(REG_I2CS_CTL_MATCH,0x3F00,hi2c);
+		//nRetCode = AdpdDrvRegWrite(REG_I2CS_CTL_MATCH,0x3F00,hi2c);
 		nRetCode |= AdpdDrvRegWrite(REG_OP_MODE, OP_PAUSE_MODE, hi2c);  // set Pause
 		// enable FIFO clock
 		nRetCode |= AdpdDrvRegWrite(REG_FIFO_CLK, FIFO_CLK_EN, hi2c);
@@ -350,7 +314,7 @@ int16_t AdpdDrvGetParameter(AdpdCommandStruct eCommand, uint16_t *pnValue, I2C_H
 		*pnValue = gnAdpdFifoWaterMark;
 	} else if (eCommand == ADPD_FIFOLEVEL) {
 		nRetCode |= AdpdDrvRegRead(hi2c, REG_INT_STATUS, &nStatData);
-		nRetCode |= AdpdDrvRegWrite(REG_INT_STATUS, nStatData, hi2c);
+//		nRetCode |= AdpdDrvRegWrite(REG_INT_STATUS, nStatData, hi2c);
 		gnFifoLevel = nStatData >> 8;
 		*pnValue = gnFifoLevel;
 	} else if (eCommand == ADPD_TIMEGAP) {
@@ -382,19 +346,9 @@ int16_t AdpdDrvGetParameter(AdpdCommandStruct eCommand, uint16_t *pnValue, I2C_H
   */
 int16_t AdpdDrvReadFifoData(uint8_t *pnData, uint16_t nDataSetSize, I2C_HandleTypeDef *hi2c)
 {
-	uint8_t nAddr;
-#ifndef NDEBUG
-	if (gnFifoLevel >= 128)
-		gnOverFlowCnt++;
-#endif  // NDEBUG
-
-	if (gnFifoLevel >= nDataSetSize) {
-		gnAccessCnt[2]++;
-		nAddr = REG_DATA_BUFFER;
-		if (ADPD_I2C_DATA(hi2c, nAddr, pnData, nDataSetSize) != TRUE)
+	if (ADPD_I2C_DATA(hi2c, REG_DATA_BUFFER, pnData, nDataSetSize) != TRUE)
 			return FALSE;
-
-	}
+	
 	return TRUE;
 }
 
